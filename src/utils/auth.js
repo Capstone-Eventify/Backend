@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 /**
  * Generate JWT token for user
@@ -27,9 +28,27 @@ const comparePassword = async (password, hashedPassword) => {
   return await bcrypt.compare(password, hashedPassword);
 };
 
+/**
+ * Generate reset password token
+ */
+const generateResetToken = () => {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  return { resetToken, hashedToken };
+};
+
+/**
+ * Hash reset token
+ */
+const hashResetToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex');
+};
+
 module.exports = {
   generateToken,
   hashPassword,
-  comparePassword
+  comparePassword,
+  generateResetToken,
+  hashResetToken
 };
 

@@ -79,7 +79,14 @@ exports.getEvent = asyncHandler(async (req, res) => {
           firstName: true,
           lastName: true,
           email: true,
-          avatar: true
+          avatar: true,
+          bio: true
+        }
+      },
+      tickets: {
+        select: {
+          id: true,
+          status: true
         }
       }
     }
@@ -98,9 +105,29 @@ exports.getEvent = asyncHandler(async (req, res) => {
     data: { views: { increment: 1 } }
   });
 
+  // Format response to match frontend EventDetail structure
+  const formattedEvent = {
+    ...event,
+    organizer: {
+      id: event.organizer.id,
+      name: `${event.organizer.firstName} ${event.organizer.lastName}`,
+      email: event.organizer.email,
+      avatar: event.organizer.avatar,
+      bio: event.organizer.bio
+    },
+    date: event.startDate.toISOString().split('T')[0],
+    time: event.startTime,
+    endDate: event.endDate ? event.endDate.toISOString().split('T')[0] : undefined,
+    endTime: event.endTime,
+    location: event.isOnline ? 'Online Event' : (event.venueName || event.address || `${event.city}, ${event.state}`),
+    price: event.price.toString(),
+    attendees: event.currentBookings,
+    status: event.status.toLowerCase() === 'published' ? 'upcoming' : event.status.toLowerCase()
+  };
+
   res.status(200).json({
     success: true,
-    data: event
+    data: formattedEvent
   });
 });
 

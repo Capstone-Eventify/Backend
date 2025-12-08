@@ -1,14 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
+const {
+  createPaymentIntent,
+  confirmPayment,
+  processRefund,
+  getPaymentHistory
+} = require('../controllers/paymentController');
 
-// Placeholder routes - can be expanded with full payment processing
-router.post('/', protect, (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Payment routes - To be implemented'
-  });
-});
+// All payment routes require authentication
+router.post('/create-intent', protect, createPaymentIntent);
+router.post('/confirm', protect, confirmPayment);
+router.post('/refund', protect, processRefund);
+router.get('/history', protect, getPaymentHistory);
 
 module.exports = router;
 

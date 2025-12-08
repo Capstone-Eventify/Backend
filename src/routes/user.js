@@ -1,14 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
+const {
+  getProfile,
+  updateProfile,
+  changePassword,
+  getUserTickets,
+  getUserEvents
+} = require('../controllers/userController');
 
-// Placeholder routes - can be expanded
-router.get('/profile', protect, (req, res) => {
-  res.status(200).json({
-    success: true,
-    data: req.user
-  });
-});
+router.get('/profile', protect, getProfile);
+router.put('/profile', protect, updateProfile);
+router.put('/password', protect, changePassword);
+router.get('/tickets', protect, getUserTickets);
+router.get('/events', protect, getUserEvents);
 
 module.exports = router;
 
