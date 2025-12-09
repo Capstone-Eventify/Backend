@@ -217,8 +217,8 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
   const tickets = [];
   for (let i = 0; i < quantity; i++) {
       const attendeeInfo = attendees[i] || {};
-    const qrCode = `QR-${eventId}-${userId}-${Date.now()}-${i}`;
     
+      // Create ticket first (without QR code)
       const ticket = await tx.ticket.create({
       data: {
           eventId: eventId,
@@ -228,7 +228,6 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
           price: pricePerTicket,
           currency: paymentIntent.currency.toUpperCase(),
         status: 'CONFIRMED',
-          qrCode: qrCode,
           orderNumber: orderNumber,
         metadata: {
             attendeeName: attendeeInfo.name || `${user.firstName} ${user.lastName}`,
@@ -239,7 +238,14 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
         }
       }
     });
-    tickets.push(ticket);
+    
+    // Update ticket with QR code = ticket ID for direct lookup
+    const updatedTicket = await tx.ticket.update({
+      where: { id: ticket.id },
+      data: { qrCode: ticket.id }
+    });
+    
+    tickets.push(updatedTicket);
   }
 
     // Update ticket tier availability if tier was used

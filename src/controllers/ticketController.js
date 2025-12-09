@@ -166,6 +166,62 @@ exports.checkInTicket = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get ticket by QR code
+// @route   GET /api/tickets/qr/:qrCode
+// @access  Private/Organizer
+exports.getTicketByQRCode = asyncHandler(async (req, res) => {
+  const { qrCode } = req.params;
+  const userId = req.user.id;
+
+  // Find ticket by QR code (which is now the ticket ID)
+  const ticket = await prisma.ticket.findUnique({
+    where: { qrCode },
+    include: {
+      event: {
+        include: {
+          organizer: true
+        }
+      },
+      attendee: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true
+        }
+      },
+      ticketTier: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          description: true
+        }
+      }
+    }
+  });
+
+  if (!ticket) {
+    return res.status(404).json({
+      success: false,
+      message: 'Ticket not found'
+    });
+  }
+
+  // Check if user is event organizer or admin
+  if (ticket.event.organizerId !== userId && req.user.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Not authorized to view this ticket'
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: ticket
+  });
+});
+
 // @desc    Get tickets by event (for organizer)
 // @route   GET /api/tickets/event/:eventId
 // @access  Private/Organizer

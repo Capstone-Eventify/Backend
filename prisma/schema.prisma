@@ -161,7 +161,7 @@ model Ticket {
   currency     String       @default("USD")
   status       TicketStatus @default(PENDING)
 
-  qrCode      String?
+  qrCode      String?   @unique // QR code is the ticket ID for direct lookup
   checkedIn   Boolean   @default(false)
   checkedInAt DateTime?
   orderNumber String    @unique
@@ -182,6 +182,7 @@ model Ticket {
   @@index([orderNumber])
   @@index([status])
   @@index([ticketTierId])
+  @@index([qrCode]) // Index for fast QR code lookups
 }
 
 model Payment {
@@ -329,7 +330,7 @@ model SupportTicket {
   resolution  String?   @db.Text
 
   // Relations
-  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   replies SupportTicketReply[]
 
   createdAt DateTime @default(now())
@@ -342,10 +343,10 @@ model SupportTicket {
 }
 
 model SupportTicketReply {
-  id          String   @id @default(uuid())
-  ticketId    String
-  userId      String // Admin or user who replied
-  message     String   @db.Text
+  id           String  @id @default(uuid())
+  ticketId     String
+  userId       String // Admin or user who replied
+  message      String  @db.Text
   isAdminReply Boolean @default(false) // True if admin replied
 
   // Relations
