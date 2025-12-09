@@ -40,3 +40,4 @@ temp
 prisma/migrations/dev.db
 prisma/migrations/dev.db-journal
 
+.env.backup
