@@ -25,6 +25,14 @@ exports.getTickets = asyncHandler(async (req, res) => {
           state: true,
           country: true
         }
+      },
+      ticketTier: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          description: true
+        }
       }
     },
     orderBy: {
@@ -47,6 +55,14 @@ exports.getTicket = asyncHandler(async (req, res) => {
     where: { id: req.params.id },
     include: {
       event: true,
+      ticketTier: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          description: true
+        }
+      },
       attendee: {
         select: {
           id: true,

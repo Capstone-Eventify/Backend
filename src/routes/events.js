@@ -6,13 +6,15 @@ const {
   createEvent,
   updateEvent,
   deleteEvent,
-  getMyEvents
+  getMyEvents,
+  getEventsByOrganizer
 } = require('../controllers/eventController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, optionalAuth } = require('../middleware/auth');
 
-// Public routes
-router.get('/', getEvents);
-router.get('/:id', getEvent);
+// Public routes (with optional auth to check user permissions for DRAFT events)
+router.get('/', optionalAuth, getEvents);
+router.get('/organizer/:organizerId', optionalAuth, getEventsByOrganizer);
+router.get('/:id', optionalAuth, getEvent);
 
 // Protected routes
 router.get('/organizer/my-events', protect, authorize('organizer', 'admin'), getMyEvents);

@@ -16,9 +16,14 @@ exports.createPaymentIntent = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get event from database
+  // Get event and ticket tier from database
   const event = await prisma.event.findUnique({
-    where: { id: eventId }
+    where: { id: eventId },
+    include: {
+      ticketTiers: ticketTierId ? {
+        where: { id: ticketTierId, isActive: true }
+      } : undefined
+    }
   });
 
   if (!event) {
@@ -26,6 +31,27 @@ exports.createPaymentIntent = asyncHandler(async (req, res) => {
       success: false,
       message: 'Event not found'
     });
+  }
+
+  // Get ticket tier if specified
+  let ticketTier = null;
+  if (ticketTierId) {
+    ticketTier = event.ticketTiers && event.ticketTiers.length > 0 
+      ? event.ticketTiers[0] 
+      : null;
+    if (!ticketTier) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket tier not found or inactive'
+      });
+    }
+    // Check if tier has enough available tickets
+    if (ticketTier.available < quantity) {
+      return res.status(400).json({
+        success: false,
+        message: `Only ${ticketTier.available} tickets available for ${ticketTier.name} tier`
+      });
+    }
   }
 
   // Check if event has capacity
@@ -36,10 +62,12 @@ exports.createPaymentIntent = asyncHandler(async (req, res) => {
     });
   }
 
-  // Calculate amount - use provided amount or event price
+  // Calculate amount - use provided amount, ticket tier price, or event price
   let finalAmount;
   if (amount) {
     finalAmount = Math.round(parseFloat(amount) * 100);
+  } else if (ticketTier) {
+    finalAmount = Math.round(ticketTier.price * 100 * quantity);
   } else {
     finalAmount = Math.round(event.price * 100 * quantity);
   }
@@ -120,9 +148,14 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get event and user from database
+  // Get event, user, and ticket tier from database
   const event = await prisma.event.findUnique({
-    where: { id: eventId }
+    where: { id: eventId },
+    include: {
+      ticketTiers: {
+        where: ticketTierId ? { id: ticketTierId, isActive: true } : { isActive: true }
+      }
+    }
   });
 
   if (!event) {
@@ -143,6 +176,25 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
     });
   }
 
+  // Get ticket tier if specified
+  let ticketTier = null;
+  if (ticketTierId) {
+    ticketTier = event.ticketTiers.find(t => t.id === ticketTierId);
+    if (!ticketTier) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket tier not found'
+      });
+    }
+    // Check if tier has enough available tickets
+    if (ticketTier.available < quantity) {
+      return res.status(400).json({
+        success: false,
+        message: `Only ${ticketTier.available} tickets available for ${ticketTier.name} tier`
+      });
+    }
+  }
+
   // Check if event has capacity
   if (event.currentBookings + quantity > event.maxAttendees) {
     return res.status(400).json({
@@ -156,65 +208,83 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
 
   // Create tickets and payment in a transaction
   const result = await prisma.$transaction(async (tx) => {
-    // Create tickets
-    const tickets = [];
-    for (let i = 0; i < quantity; i++) {
+    // Calculate price per ticket
+    const pricePerTicket = ticketTier 
+      ? ticketTier.price 
+      : paymentIntent.amount / 100 / quantity;
+
+  // Create tickets
+  const tickets = [];
+  for (let i = 0; i < quantity; i++) {
       const attendeeInfo = attendees[i] || {};
-      const qrCode = `QR-${eventId}-${userId}-${Date.now()}-${i}`;
-      
+    const qrCode = `QR-${eventId}-${userId}-${Date.now()}-${i}`;
+    
       const ticket = await tx.ticket.create({
-        data: {
+      data: {
           eventId: eventId,
-          attendeeId: userId,
-          ticketType: ticketTierId || 'General',
-          price: paymentIntent.amount / 100 / quantity, // Price per ticket
+        attendeeId: userId,
+          ticketTierId: ticketTierId || null,
+          ticketType: ticketTier ? ticketTier.name : 'General',
+          price: pricePerTicket,
           currency: paymentIntent.currency.toUpperCase(),
-          status: 'CONFIRMED',
+        status: 'CONFIRMED',
           qrCode: qrCode,
           orderNumber: orderNumber,
-          metadata: {
+        metadata: {
             attendeeName: attendeeInfo.name || `${user.firstName} ${user.lastName}`,
             attendeeEmail: attendeeInfo.email || user.email,
-            ticketTierId: ticketTierId || 'general',
-            promoCode: promoCode || null,
-            discount: discount || 0
+            ticketTierId: ticketTierId || null,
+          promoCode: promoCode || null,
+          discount: discount || 0
+        }
+      }
+    });
+    tickets.push(ticket);
+  }
+
+    // Update ticket tier availability if tier was used
+    if (ticketTier) {
+      await tx.ticketTier.update({
+        where: { id: ticketTierId },
+        data: {
+          available: {
+            decrement: quantity
           }
         }
       });
-      tickets.push(ticket);
     }
 
-    // Create payment record
+  // Create payment record
     const payment = await tx.payment.create({
-      data: {
+    data: {
         userId: userId,
         eventId: eventId,
         ticketId: tickets[0].id, // Link to first ticket
-        amount: paymentIntent.amount / 100,
+      amount: paymentIntent.amount / 100,
         currency: paymentIntent.currency.toUpperCase(),
-        stripePaymentId: paymentIntent.id,
-        paymentMethod: 'card',
-        status: 'COMPLETED',
-        transactionId: paymentIntent.id,
-        metadata: {
+      stripePaymentId: paymentIntent.id,
+      paymentMethod: 'card',
+      status: 'COMPLETED',
+      transactionId: paymentIntent.id,
+      metadata: {
           orderNumber: orderNumber,
           quantity: quantity,
-          promoCode: promoCode || null,
+        promoCode: promoCode || null,
           discount: discount || 0,
           ticketIds: tickets.map(t => t.id)
-        }
       }
-    });
+    }
+  });
 
-    // Update event bookings
+  // Update event bookings
     await tx.event.update({
-      where: { id: eventId },
-      data: {
-        currentBookings: {
-          increment: quantity
-        }
+    where: { id: eventId },
+    data: {
+      currentBookings: {
+        increment: quantity
       }
-    });
+    }
+  });
 
     return { tickets, payment };
   });
@@ -259,7 +329,7 @@ exports.processRefund = asyncHandler(async (req, res) => {
     include: {
       ticket: {
         include: {
-          event: true
+      event: true
         }
       }
     }
@@ -280,15 +350,15 @@ exports.processRefund = asyncHandler(async (req, res) => {
   }
 
   // Process Stripe refund
-  try {
-    const refund = await stripe.refunds.create({
+    try {
+      const refund = await stripe.refunds.create({
       payment_intent: paymentIntentId,
       reason: reason || 'requested_by_customer',
-      metadata: {
+        metadata: {
         userId: userId,
-        reason: reason || 'Customer request'
-      }
-    });
+          reason: reason || 'Customer request'
+        }
+      });
 
     // Update payment and tickets in transaction
     await prisma.$transaction(async (tx) => {
@@ -303,7 +373,7 @@ exports.processRefund = asyncHandler(async (req, res) => {
             refundedAt: new Date().toISOString(),
             refundReason: reason || 'requested_by_customer'
           }
-        }
+    }
       });
 
       // Update tickets status
@@ -317,20 +387,20 @@ exports.processRefund = asyncHandler(async (req, res) => {
         where: {
           orderNumber: payment.ticket.orderNumber
         },
-        data: {
-          status: 'REFUNDED'
-        }
-      });
+    data: {
+      status: 'REFUNDED'
+    }
+  });
 
       // Decrease event bookings
       await tx.event.update({
         where: { id: payment.eventId },
-        data: {
-          currentBookings: {
+    data: {
+      currentBookings: {
             decrement: tickets.length
-          }
-        }
-      });
+      }
+    }
+  });
     });
 
     res.status(200).json({
@@ -349,7 +419,7 @@ exports.processRefund = asyncHandler(async (req, res) => {
       success: false,
       message: 'Failed to process refund',
       error: stripeError.message
-    });
+  });
   }
 });
 

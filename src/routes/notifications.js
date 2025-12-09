@@ -1,9 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
-const { sendEventReminder } = require('../controllers/notificationController');
+const {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getUnreadCount,
+  sendEventReminder
+} = require('../controllers/notificationController');
 
-router.post('/reminder', protect, authorize('ORGANIZER', 'ADMIN'), sendEventReminder);
+// User routes
+router.get('/', protect, getNotifications);
+router.get('/unread-count', protect, getUnreadCount);
+router.put('/:id/read', protect, markAsRead);
+router.put('/read-all', protect, markAllAsRead);
+router.delete('/:id', protect, deleteNotification);
+
+// Organizer routes
+router.post('/reminder', protect, authorize('organizer', 'admin'), sendEventReminder);
 
 module.exports = router;
 

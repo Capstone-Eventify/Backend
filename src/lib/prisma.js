@@ -6,14 +6,14 @@ let prisma;
 try {
   prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  });
+});
 
   // Try to connect, but don't block if it fails (for mock mode)
-  prisma.$connect()
-    .then(() => {
-      console.log('✅ Prisma Client connected to PostgreSQL');
-    })
-    .catch((err) => {
+prisma.$connect()
+  .then(() => {
+    console.log('✅ Prisma Client connected to PostgreSQL');
+  })
+  .catch((err) => {
       console.warn('⚠️  Database not available - Running in MOCK MODE');
       console.warn('   Stripe payments will work, but data won\'t be persisted');
     });
@@ -30,7 +30,7 @@ try {
 process.on('beforeExit', async () => {
   try {
     if (prisma && prisma.$disconnect) {
-      await prisma.$disconnect();
+  await prisma.$disconnect();
     }
   } catch (error) {
     // Ignore disconnect errors in mock mode

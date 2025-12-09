@@ -13,11 +13,17 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const eventRoutes = require('./routes/events');
 const ticketRoutes = require('./routes/tickets');
+const ticketTierRoutes = require('./routes/ticketTiers');
 const paymentRoutes = require('./routes/payments');
 const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
 const supportRoutes = require('./routes/support');
+const supportTicketRoutes = require('./routes/supportTickets');
+const organizerApplicationRoutes = require('./routes/organizerApplications');
 const socialRoutes = require('./routes/social');
+const waitlistRoutes = require('./routes/waitlist');
+const favoritesRoutes = require('./routes/favorites');
+const uploadRoutes = require('./routes/upload');
 
 // Initialize Express app
 const app = express();
@@ -57,11 +63,17 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/ticket-tiers', ticketTierRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/support-tickets', supportTicketRoutes);
+app.use('/api/organizer-applications', organizerApplicationRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/favorites', favoritesRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // 404 handler
 app.use((req, res) => {
