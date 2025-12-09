@@ -97,8 +97,9 @@ app.use((err, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 5001; // Changed to 5001 to avoid macOS AirPlay conflict
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces to allow external connections
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running on ${HOST}:${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`💾 Database: Connected to PostgreSQL`);
   console.log(`💳 Stripe payments: Enabled`);
