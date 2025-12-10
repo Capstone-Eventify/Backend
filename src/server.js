@@ -5,25 +5,50 @@ const compression = require('compression');
 const morgan = require('morgan');
 require('dotenv').config();
 
+// Error handlers to catch crashes
+process.on('uncaughtException', (error) => {
+  console.error('FATAL ERROR:', error.message);
+  console.error(error.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  if (reason && reason.stack) console.error(reason.stack);
+  process.exit(1);
+});
+
 // Initialize Prisma Client
 const prisma = require('./lib/prisma');
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
-const eventRoutes = require('./routes/events');
-const ticketRoutes = require('./routes/tickets');
-const ticketTierRoutes = require('./routes/ticketTiers');
-const paymentRoutes = require('./routes/payments');
-const analyticsRoutes = require('./routes/analytics');
-const notificationRoutes = require('./routes/notifications');
-const supportRoutes = require('./routes/support');
-const supportTicketRoutes = require('./routes/supportTickets');
-const organizerApplicationRoutes = require('./routes/organizerApplications');
-const socialRoutes = require('./routes/social');
-const waitlistRoutes = require('./routes/waitlist');
-const favoritesRoutes = require('./routes/favorites');
-const uploadRoutes = require('./routes/upload');
+// Import routes with error handling
+let authRoutes, userRoutes, eventRoutes, ticketRoutes, ticketTierRoutes;
+let paymentRoutes, analyticsRoutes, notificationRoutes, supportRoutes;
+let supportTicketRoutes, organizerApplicationRoutes, socialRoutes;
+let waitlistRoutes, favoritesRoutes, uploadRoutes;
+
+try {
+  authRoutes = require('./routes/auth');
+  userRoutes = require('./routes/user');
+  eventRoutes = require('./routes/events');
+  ticketRoutes = require('./routes/tickets');
+  ticketTierRoutes = require('./routes/ticketTiers');
+  paymentRoutes = require('./routes/payments');
+  analyticsRoutes = require('./routes/analytics');
+  notificationRoutes = require('./routes/notifications');
+  supportRoutes = require('./routes/support');
+  supportTicketRoutes = require('./routes/supportTickets');
+  organizerApplicationRoutes = require('./routes/organizerApplications');
+  socialRoutes = require('./routes/social');
+  waitlistRoutes = require('./routes/waitlist');
+  favoritesRoutes = require('./routes/favorites');
+  uploadRoutes = require('./routes/upload');
+  console.log('✅ All routes loaded successfully');
+} catch (error) {
+  console.error('❌ Failed to load routes:', error.message);
+  console.error('Stack:', error.stack);
+  process.exit(1);
+}
 
 // Initialize Express app
 const app = express();
@@ -98,12 +123,20 @@ app.use((err, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || 5001; // Changed to 5001 to avoid macOS AirPlay conflict
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces to allow external connections
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running on ${HOST}:${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💾 Database: Connected to PostgreSQL`);
-  console.log(`💳 Stripe payments: Enabled`);
-});
+
+try {
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on ${HOST}:${PORT}`);
+    console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`💾 Database: Connected to PostgreSQL`);
+    console.log(`💳 Stripe payments: Enabled`);
+    console.log(`✅ Server started successfully!`);
+  });
+} catch (error) {
+  console.error('❌ Failed to start server:', error.message);
+  console.error('Stack:', error.stack);
+  process.exit(1);
+}
 
 module.exports = app;
 
