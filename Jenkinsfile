@@ -1,6 +1,11 @@
 pipeline {
     agent any
     
+    triggers {
+        // Poll GitHub every 2 minutes for changes
+        pollSCM('H/2 * * * *')
+    }
+    
     environment {
         DEV_SERVER = '18.218.232.116'
         QA_SERVER = '18.191.61.198'
