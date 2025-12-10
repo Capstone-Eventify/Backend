@@ -639,13 +639,19 @@ exports.deleteEvent = asyncHandler(async (req, res) => {
 // @route   GET /api/events/organizer/my-events
 // @access  Private/Organizer
 exports.getMyEvents = asyncHandler(async (req, res) => {
+  // Normalize role to uppercase for comparison (database stores as uppercase enum)
+  const userRole = (req.user.role || '').toUpperCase();
+  
   // Build where clause - organizers see their own events, admins see all
-  const whereClause = req.user.role === 'ADMIN' 
+  const whereClause = userRole === 'ADMIN' 
     ? {} // Admins see all events
     : { organizerId: req.user.id }; // Organizers see only their events
 
-  console.log('getMyEvents - User ID:', req.user.id, 'Role:', req.user.role);
-  console.log('getMyEvents - Where clause:', JSON.stringify(whereClause));
+  console.log('=== getMyEvents DEBUG ===');
+  console.log('User ID:', req.user.id);
+  console.log('User Role (raw):', req.user.role);
+  console.log('User Role (normalized):', userRole);
+  console.log('Where clause:', JSON.stringify(whereClause));
 
   const events = await prisma.event.findMany({
     where: whereClause,
@@ -684,6 +690,17 @@ exports.getMyEvents = asyncHandler(async (req, res) => {
       organizer: events[0].organizer ? 'exists' : 'null',
       ticketTiersCount: events[0].ticketTiers?.length || 0
     });
+  } else {
+    console.log('⚠️ No events found for organizerId:', req.user.id);
+    // Debug: Check if any events exist at all
+    const totalEvents = await prisma.event.count();
+    console.log('Total events in database:', totalEvents);
+    // Check sample organizerIds
+    const sampleEvents = await prisma.event.findMany({
+      select: { id: true, title: true, organizerId: true },
+      take: 3
+    });
+    console.log('Sample events organizerIds:', sampleEvents.map(e => ({ title: e.title, organizerId: e.organizerId })));
   }
 
   // Format events to match frontend expectations

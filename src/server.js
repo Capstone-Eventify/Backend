@@ -58,7 +58,25 @@ app.use(helmet());
 
 // Enable CORS
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, Postman, Swagger UI)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      process.env.CORS_ORIGIN || 'http://localhost:3000',
+      'http://localhost:3002', // Swagger UI docs server
+      'http://localhost:5001', // Allow same-origin requests
+      'http://127.0.0.1:3002',
+      'http://127.0.0.1:5001'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins in development (remove in production)
+      // For production, use: callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
