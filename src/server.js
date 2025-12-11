@@ -145,11 +145,11 @@ const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces to allow
 try {
   app.listen(PORT, HOST, () => {
     console.log(`🚀 Server running on ${HOST}:${PORT}`);
-    console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`💾 Database: Connected to PostgreSQL`);
-    console.log(`💳 Stripe payments: Enabled`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`💾 Database: Connected to PostgreSQL`);
+  console.log(`💳 Stripe payments: Enabled`);
     console.log(`✅ Server started successfully!`);
-  });
+});
 } catch (error) {
   console.error('❌ Failed to start server:', error.message);
   console.error('Stack:', error.stack);

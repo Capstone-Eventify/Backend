@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
 const { sendEmail } = require('../utils/email');
+const { generateTicketPDF } = require('../utils/pdfGenerator');
 
 // @desc    Get user tickets
 // @route   GET /api/tickets
@@ -8,6 +9,8 @@ const { sendEmail } = require('../utils/email');
 exports.getTickets = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
+  console.log('Fetching tickets for user:', userId);
+  
   const tickets = await prisma.ticket.findMany({
     where: { attendeeId: userId },
     include: {
@@ -274,3 +277,109 @@ exports.getEventTickets = asyncHandler(async (req, res) => {
   });
 });
 
+
+// @desc    Download ticket as PDF
+// @route   GET /api/tickets/:id/download
+// @access  Private
+exports.downloadTicket = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  // Get ticket with all related data
+  const ticket = await prisma.ticket.findUnique({
+    where: { id },
+    include: {
+      event: {
+        select: {
+          id: true,
+          title: true,
+          image: true,
+          startDate: true,
+          endDate: true,
+          startTime: true,
+          endTime: true,
+          venueName: true,
+          city: true,
+          state: true,
+          country: true
+        }
+      },
+      ticketTier: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          description: true
+        }
+      },
+      attendee: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true
+        }
+      }
+    }
+  });
+
+  if (!ticket) {
+    return res.status(404).json({
+      success: false,
+      message: 'Ticket not found'
+    });
+  }
+
+  // Check if user owns the ticket or is admin/organizer
+  if (ticket.attendeeId !== userId && req.user.role !== 'ADMIN') {
+    // Also check if user is the event organizer
+    const event = await prisma.event.findUnique({
+      where: { id: ticket.eventId },
+      select: { organizerId: true }
+    });
+
+    if (!event || event.organizerId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to download this ticket'
+      });
+    }
+  }
+
+  // Only allow download for confirmed tickets
+  if (ticket.status !== 'CONFIRMED') {
+    return res.status(400).json({
+      success: false,
+      message: 'Only confirmed tickets can be downloaded'
+    });
+  }
+
+  try {
+    // Prepare ticket data for PDF generation
+    const ticketData = {
+      ticket,
+      event: ticket.event,
+      attendee: ticket.attendee,
+      ticketTier: ticket.ticketTier
+    };
+
+    // Generate PDF
+    const pdfBuffer = await generateTicketPDF(ticketData);
+
+    // Set response headers for PDF download
+    const filename = `ticket_${ticket.event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${ticket.id}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    // Send PDF
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating ticket PDF:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generating ticket PDF'
+    });
+  }
+});

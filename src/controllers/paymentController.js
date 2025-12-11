@@ -316,37 +316,62 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
 // @route   POST /api/payments/refund
 // @access  Private
 exports.processRefund = asyncHandler(async (req, res) => {
-  const { paymentIntentId, reason } = req.body;
+  const { paymentId, ticketId, reason } = req.body;
   const userId = req.user.id;
 
-  if (!paymentIntentId) {
+  console.log('Refund request:', { paymentId, ticketId, reason, userId });
+
+  // Support both paymentId (legacy) and ticketId (new approach)
+  let payment;
+
+  if (ticketId) {
+    // Find payment by ticket ID
+    payment = await prisma.payment.findFirst({
+      where: {
+        ticketId: ticketId,
+        userId: userId
+      },
+      include: {
+        ticket: {
+          include: {
+            event: true
+          }
+        }
+      }
+    });
+  } else if (paymentId) {
+    // Find payment by payment ID or Stripe payment ID
+    payment = await prisma.payment.findFirst({
+      where: {
+        OR: [
+          { id: paymentId, userId: userId },
+          { stripePaymentId: paymentId, userId: userId }
+        ]
+      },
+      include: {
+        ticket: {
+          include: {
+            event: true
+          }
+        }
+      }
+    });
+  } else {
     return res.status(400).json({
       success: false,
-      message: 'Payment intent ID is required'
+      message: 'Either ticketId or paymentId is required'
     });
   }
 
-  // Find payment record
-  const payment = await prisma.payment.findFirst({
-    where: {
-      stripePaymentId: paymentIntentId,
-      userId: userId
-    },
-    include: {
-      ticket: {
-        include: {
-      event: true
-        }
-      }
-    }
-  });
-
   if (!payment) {
+    console.log('Payment not found for:', { ticketId, paymentId, userId });
     return res.status(404).json({
       success: false,
       message: 'Payment not found'
     });
   }
+
+  console.log('Found payment:', { paymentId: payment.id, ticketId: payment.ticketId, status: payment.status });
 
   if (payment.status === 'REFUNDED') {
     return res.status(400).json({
@@ -355,18 +380,64 @@ exports.processRefund = asyncHandler(async (req, res) => {
     });
   }
 
-  // Process Stripe refund
+  // Check if ticket is eligible for refund
+  if (payment.ticket.status === 'REFUNDED') {
+    return res.status(400).json({
+      success: false,
+      message: 'Ticket already refunded'
+    });
+  }
+
+  // Process Stripe refund if there's a Stripe payment ID
+  let refund = null;
+  if (payment.stripePaymentId) {
     try {
-      const refund = await stripe.refunds.create({
-      payment_intent: paymentIntentId,
-      reason: reason || 'requested_by_customer',
+      // Map custom reasons to Stripe-accepted reasons
+      const mapReasonToStripe = (customReason) => {
+        if (!customReason) return 'requested_by_customer';
+        
+        const lowerReason = customReason.toLowerCase();
+        
+        // Check for fraudulent indicators
+        if (lowerReason.includes('fraud') || lowerReason.includes('unauthorized')) {
+          return 'fraudulent';
+        }
+        
+        // Check for duplicate indicators
+        if (lowerReason.includes('duplicate') || lowerReason.includes('double')) {
+          return 'duplicate';
+        }
+        
+        // Default to customer request for all other reasons
+        return 'requested_by_customer';
+      };
+
+      const stripeReason = mapReasonToStripe(reason);
+      
+      console.log('Refund reason mapping:', { originalReason: reason, stripeReason });
+      
+      refund = await stripe.refunds.create({
+        payment_intent: payment.stripePaymentId,
+        reason: stripeReason,
         metadata: {
-        userId: userId,
-          reason: reason || 'Customer request'
+          userId: userId,
+          ticketId: payment.ticketId,
+          originalReason: reason || 'Customer request',
+          mappedReason: stripeReason
         }
       });
+    } catch (stripeError) {
+      console.error('Stripe Refund Error:', stripeError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to process Stripe refund',
+        error: stripeError.message
+      });
+    }
+  }
 
-    // Update payment and tickets in transaction
+  // Update payment and tickets in transaction
+  try {
     await prisma.$transaction(async (tx) => {
       // Update payment status
       await tx.payment.update({
@@ -375,57 +446,50 @@ exports.processRefund = asyncHandler(async (req, res) => {
           status: 'REFUNDED',
           metadata: {
             ...payment.metadata,
-            refundId: refund.id,
+            refundId: refund?.id || 'manual_refund',
             refundedAt: new Date().toISOString(),
-            refundReason: reason || 'requested_by_customer'
+            refundReason: reason || 'requested_by_customer',
+            stripeReason: refund ? 'mapped_to_stripe' : 'manual_refund'
           }
-    }
-      });
-
-      // Update tickets status
-      const tickets = await tx.ticket.findMany({
-        where: {
-          orderNumber: payment.ticket.orderNumber
         }
       });
 
-      await tx.ticket.updateMany({
-        where: {
-          orderNumber: payment.ticket.orderNumber
-        },
-    data: {
-      status: 'REFUNDED'
-    }
-  });
+      // Update ticket status
+      await tx.ticket.update({
+        where: { id: payment.ticketId },
+        data: {
+          status: 'REFUNDED'
+        }
+      });
 
       // Decrease event bookings
       await tx.event.update({
         where: { id: payment.eventId },
-    data: {
-      currentBookings: {
-            decrement: tickets.length
-      }
-    }
-  });
+        data: {
+          currentBookings: {
+            decrement: 1
+          }
+        }
+      });
     });
 
     res.status(200).json({
       success: true,
       message: 'Refund processed successfully',
       data: {
-        refundId: refund.id,
-        amount: refund.amount / 100,
-        currency: refund.currency,
-        status: refund.status
+        refundId: refund?.id || 'manual_refund',
+        amount: refund ? refund.amount / 100 : payment.amount,
+        currency: refund?.currency || payment.currency,
+        status: refund?.status || 'processed'
       }
     });
-  } catch (stripeError) {
-    console.error('Stripe Refund Error:', stripeError);
+  } catch (error) {
+    console.error('Database Refund Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to process refund',
-      error: stripeError.message
-  });
+      message: 'Failed to update refund status',
+      error: error.message
+    });
   }
 });
 

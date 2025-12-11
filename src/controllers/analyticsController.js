@@ -8,10 +8,15 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
   const userId = req.user.id;
 
-  // Verify user is event organizer
+  // Verify user is event organizer and get event dates
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizerId: true }
+    select: { 
+      organizerId: true,
+      createdAt: true,
+      publishedAt: true,
+      startDate: true
+    }
   });
 
   if (!event) {
@@ -44,6 +49,30 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
     }
   });
 
+  // Debug logging
+  const eventStartDate = event.publishedAt || event.createdAt || event.startDate;
+  console.log('Event Analytics Debug:', {
+    eventId,
+    eventStartDate: eventStartDate,
+    eventCreatedAt: event.createdAt,
+    eventPublishedAt: event.publishedAt,
+    eventStartDateField: event.startDate,
+    totalTickets: tickets.length,
+    ticketDates: tickets.map(t => ({
+      id: t.id,
+      createdAt: t.createdAt,
+      status: t.status,
+      ticketType: t.ticketType,
+      price: t.price,
+      checkedIn: t.checkedIn,
+      paymentAmount: t.payment?.amount
+    })),
+    dateRange: {
+      start: eventStartDate,
+      end: new Date().toISOString()
+    }
+  });
+
   // Calculate statistics
   const totalTickets = tickets.length;
   const confirmedTickets = tickets.filter(t => t.status === 'CONFIRMED');
@@ -63,7 +92,8 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
     }
     acc[type].count++;
     if (ticket.status === 'CONFIRMED') {
-      acc[type].revenue += ticket.payment?.amount || ticket.price || 0;
+      const revenue = ticket.payment?.amount || ticket.price || 0;
+      acc[type].revenue += revenue;
     }
     if (ticket.checkedIn) {
       acc[type].checkedIn++;
@@ -71,24 +101,90 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
     return acc;
   }, {});
 
-  // Registration timeline (last 30 days)
-  const registrationTimeline = Array.from({ length: 30 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (29 - i));
-    date.setHours(0, 0, 0, 0);
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
+  // Debug ticket type stats
+  console.log('Ticket Type Stats Debug:', {
+    ticketTypeStats,
+    ticketsProcessed: tickets.length,
+    ticketDetails: tickets.map(t => ({
+      id: t.id,
+      ticketType: t.ticketType,
+      status: t.status,
+      price: t.price,
+      paymentAmount: t.payment?.amount,
+      checkedIn: t.checkedIn
+    }))
+  });
+
+  // Registration timeline - from first registration date to today
+  // Find the first ticket creation date (first registration)
+  const firstTicketDate = tickets.length > 0 
+    ? tickets.reduce((earliest, ticket) => {
+        if (!ticket.createdAt) return earliest
+        const ticketDate = new Date(ticket.createdAt)
+        return earliest && ticketDate < earliest ? ticketDate : (earliest || ticketDate)
+      }, null)
+    : null
+
+  // Use first ticket date if available, otherwise use event start date
+  const startDate = firstTicketDate 
+    ? new Date(firstTicketDate)
+    : new Date(eventStartDate)
+    
+  startDate.setHours(0, 0, 0, 0)
+  startDate.setMinutes(0, 0, 0)
+  startDate.setSeconds(0, 0)
+  startDate.setMilliseconds(0)
+  
+  const today = new Date()
+  today.setHours(23, 59, 59, 999) // End of today
+  
+  // Calculate number of days from first registration to today
+  const daysDiff = firstTicketDate 
+    ? Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 0
+    
+  const totalDays = Math.max(1, daysDiff + 1) // At least 1 day, add 1 to include today
+  
+  // Generate timeline from first registration date to today
+  const registrationTimeline = Array.from({ length: totalDays }, (_, i) => {
+    const date = new Date(startDate)
+    date.setDate(date.getDate() + i)
+    date.setHours(0, 0, 0, 0)
+    date.setMinutes(0, 0, 0)
+    date.setSeconds(0, 0)
+    date.setMilliseconds(0)
+    
+    const nextDay = new Date(date)
+    nextDay.setDate(nextDay.getDate() + 1)
 
     const count = tickets.filter(t => {
-      const ticketDate = new Date(t.createdAt);
-      return ticketDate >= date && ticketDate < nextDay;
-    }).length;
+      if (!t.createdAt) return false
+      const ticketDate = new Date(t.createdAt)
+      ticketDate.setHours(0, 0, 0, 0)
+      ticketDate.setMinutes(0, 0, 0)
+      ticketDate.setSeconds(0, 0)
+      ticketDate.setMilliseconds(0)
+      return ticketDate.getTime() >= date.getTime() && ticketDate.getTime() < nextDay.getTime()
+    }).length
 
     return {
       date: date.toISOString().split('T')[0],
       count
-    };
-  });
+    }
+  })
+  
+  console.log('Registration Timeline Debug:', {
+    firstTicketDate: firstTicketDate?.toISOString(),
+    eventStartDate: eventStartDate?.toISOString(),
+    startDate: startDate.toISOString(),
+    today: today.toISOString(),
+    totalDays,
+    timelineLength: registrationTimeline.length,
+    ticketsWithDates: tickets.map(t => ({
+      id: t.id,
+      createdAt: t.createdAt
+    }))
+  })
 
   // Check-in rate
   const checkInRate = confirmedTickets.length > 0
@@ -100,7 +196,7 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
     ? totalRevenue / confirmedTickets.length
     : 0;
 
-  res.status(200).json({
+  const responseData = {
     success: true,
     data: {
       totalTickets,
@@ -113,7 +209,18 @@ exports.getEventAnalytics = asyncHandler(async (req, res) => {
       ticketTypeStats,
       registrationTimeline
     }
+  };
+
+  // Debug final response
+  console.log('Analytics Response:', {
+    totalTickets: responseData.data.totalTickets,
+    confirmedTickets: responseData.data.confirmedTickets,
+    ticketTypeStatsKeys: Object.keys(responseData.data.ticketTypeStats),
+    registrationTimelineWithData: responseData.data.registrationTimeline.filter(d => d.count > 0),
+    registrationTimelineTotal: responseData.data.registrationTimeline.reduce((sum, d) => sum + d.count, 0)
   });
+
+  res.status(200).json(responseData);
 });
 
 // @desc    Get organizer dashboard analytics
