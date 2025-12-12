@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -43,6 +44,7 @@ try {
   waitlistRoutes = require('./routes/waitlist');
   favoritesRoutes = require('./routes/favorites');
   uploadRoutes = require('./routes/upload');
+  communicationsRoutes = require('./routes/communications');
   console.log('✅ All routes loaded successfully');
 } catch (error) {
   console.error('❌ Failed to load routes:', error.message);
@@ -50,8 +52,13 @@ try {
   process.exit(1);
 }
 
-// Initialize Express app
+// Initialize Express app and HTTP server
 const app = express();
+const server = http.createServer(app);
+
+// Initialize Socket.IO service
+const socketService = require('./services/socketService');
+socketService.initialize(server);
 
 // Security middleware
 app.use(helmet());
@@ -117,6 +124,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/communications', communicationsRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -143,13 +151,14 @@ const PORT = process.env.PORT || 5001; // Changed to 5001 to avoid macOS AirPlay
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces to allow external connections
 
 try {
-  app.listen(PORT, HOST, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`🚀 Server running on ${HOST}:${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💾 Database: Connected to PostgreSQL`);
-  console.log(`💳 Stripe payments: Enabled`);
+    console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`💾 Database: Connected to PostgreSQL`);
+    console.log(`💳 Stripe payments: Enabled`);
+    console.log(`🔌 WebSocket: Real-time notifications enabled`);
     console.log(`✅ Server started successfully!`);
-});
+  });
 } catch (error) {
   console.error('❌ Failed to start server:', error.message);
   console.error('Stack:', error.stack);

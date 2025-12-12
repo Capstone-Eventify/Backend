@@ -1,6 +1,8 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const prisma = require('../lib/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
+const notificationService = require('../services/notificationService');
+const communicationService = require('../services/communicationService');
 
 // @desc    Create payment intent
 // @route   POST /api/payments/create-intent
@@ -295,6 +297,32 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
     return { tickets, payment };
   });
 
+  // Send registration notifications
+  try {
+    await notificationService.notifyEventRegistration({
+      ticket: result.tickets[0],
+      event: event,
+      attendee: user
+    });
+  } catch (notificationError) {
+    console.error('Error sending registration notifications:', notificationError);
+    // Don't fail the payment if notifications fail
+  }
+
+  // Send SMS and Email notifications
+  try {
+    console.log('Sending SMS and Email notifications for event registration...');
+    const notifications = await communicationService.sendEventRegistrationNotification(
+      user,
+      event,
+      result.tickets[0]
+    );
+    console.log('Notification results:', notifications);
+  } catch (communicationError) {
+    console.error('Error sending SMS/Email notifications:', communicationError);
+    // Don't fail the payment if notifications fail
+  }
+
   res.status(200).json({
     success: true,
     message: 'Payment confirmed successfully',
@@ -472,6 +500,25 @@ exports.processRefund = asyncHandler(async (req, res) => {
         }
       });
     });
+
+    // Send refund notifications
+    try {
+      const attendee = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, firstName: true, lastName: true, email: true }
+      });
+
+      await notificationService.notifyRefund({
+        payment: payment,
+        ticket: payment.ticket,
+        event: payment.ticket.event,
+        attendee: attendee,
+        reason: reason || 'Refund requested'
+      });
+    } catch (notificationError) {
+      console.error('Error sending refund notifications:', notificationError);
+      // Don't fail the refund if notifications fail
+    }
 
     res.status(200).json({
       success: true,

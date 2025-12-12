@@ -2,6 +2,7 @@ const prisma = require('../lib/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
 const { sendEmail } = require('../utils/email');
 const { generateTicketPDF } = require('../utils/pdfGenerator');
+const communicationService = require('../services/communicationService');
 
 // @desc    Get user tickets
 // @route   GET /api/tickets

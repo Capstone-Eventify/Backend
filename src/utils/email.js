@@ -31,7 +31,8 @@ if (isEmailConfigured()) {
 // Send email
 exports.sendEmail = async (options) => {
   if (!isEmailConfigured() || !transporter) {
-    throw new Error('Email service is not configured. Please set EMAIL_HOST, EMAIL_USER, and EMAIL_PASS in your .env file.');
+    console.warn('Email service is not configured. Skipping email notification.');
+    return { success: false, message: 'Email service not configured' };
   }
 
   const message = {
@@ -44,9 +45,11 @@ exports.sendEmail = async (options) => {
 
   try {
     await transporter.sendMail(message);
+    return { success: true, message: 'Email sent successfully' };
   } catch (error) {
     console.error('Error sending email:', error);
-    throw new Error(`Failed to send email: ${error.message}`);
+    // Don't throw error - just log and return failure status
+    return { success: false, message: `Failed to send email: ${error.message}` };
   }
 };
 

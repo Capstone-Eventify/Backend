@@ -1,29 +1,71 @@
 const prisma = require('../lib/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
+const notificationService = require('../services/notificationService');
+const socketService = require('../services/socketService');
 
 // @desc    Get user's notifications
 // @route   GET /api/notifications
 // @access  Private
 exports.getNotifications = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { unreadOnly } = req.query;
+  const { 
+    unreadOnly, 
+    type, 
+    page = 1, 
+    limit = 50,
+    startDate,
+    endDate 
+  } = req.query;
 
   const where = { userId };
+  
+  // Filter by read status
   if (unreadOnly === 'true') {
     where.isRead = false;
   }
+  
+  // Filter by notification type
+  if (type && type !== 'all') {
+    where.type = type;
+  }
+  
+  // Filter by date range
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) {
+      where.createdAt.gte = new Date(startDate);
+    }
+    if (endDate) {
+      where.createdAt.lte = new Date(endDate);
+    }
+  }
+
+  // Calculate pagination
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = Math.min(parseInt(limit), 100); // Max 100 per request
+
+  // Get total count for pagination
+  const totalCount = await prisma.notification.count({ where });
 
   const notifications = await prisma.notification.findMany({
     where,
     orderBy: {
       createdAt: 'desc'
     },
-    take: 100 // Limit to 100 most recent
+    skip,
+    take
   });
+
+  const totalPages = Math.ceil(totalCount / take);
 
   res.status(200).json({
     success: true,
     count: notifications.length,
+    totalCount,
+    currentPage: parseInt(page),
+    totalPages,
+    hasNextPage: parseInt(page) < totalPages,
+    hasPrevPage: parseInt(page) > 1,
     data: notifications
   });
 });
@@ -199,9 +241,65 @@ exports.sendEventReminder = asyncHandler(async (req, res) => {
     data: notifications
   });
 
+  // Send real-time notifications using the notification service
+  try {
+    await notificationService.notifyEventReminder(eventId, message);
+  } catch (error) {
+    console.error('Error sending real-time reminder notifications:', error);
+  }
+
   res.status(200).json({
     success: true,
     message: `Reminder sent to ${notifications.length} attendees`,
     count: notifications.length
+  });
+});
+
+// @desc    Send test notification (for development)
+// @route   POST /api/notifications/test
+// @access  Private/Admin
+exports.sendTestNotification = asyncHandler(async (req, res) => {
+  const { type = 'info', title, message, targetUserId } = req.body;
+  
+  if (req.user.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Admin access required'
+    });
+  }
+
+  const notification = {
+    type,
+    title: title || 'Test Notification',
+    message: message || 'This is a test notification from the admin panel.',
+    link: '/dashboard'
+  };
+
+  if (targetUserId) {
+    await socketService.sendToUser(targetUserId, notification);
+  } else {
+    await socketService.sendToUser(req.user.id, notification);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Test notification sent'
+  });
+});
+
+// @desc    Get real-time connection status
+// @route   GET /api/notifications/status
+// @access  Private
+exports.getConnectionStatus = asyncHandler(async (req, res) => {
+  const connectedUsers = socketService.getConnectedUsersCount();
+  const isUserConnected = socketService.isUserConnected(req.user.id);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      connectedUsers,
+      isUserConnected,
+      userId: req.user.id
+    }
   });
 });
