@@ -90,5 +90,4 @@ migrate-*.js
 migrate-*.ts
 
 # Development utility scripts
-docs-server.js
 *-server.js

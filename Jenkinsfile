@@ -7,9 +7,9 @@ pipeline {
     }
     
     environment {
-        DEV_SERVER = '18.218.232.116'
-        QA_SERVER = '18.191.61.198'
-        PROD_SERVER = '18.117.193.239'
+        DEV_SERVER = '3.15.170.92'
+        QA_SERVER = '52.14.183.52'
+        PROD_SERVER = '3.20.236.137'
         
         // No hardcoded emails - using Jenkins global variables instead!
         // Variables available from Jenkins: Developers, QA, Product, Backend
