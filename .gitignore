@@ -76,5 +76,19 @@ test-sms-service.*
 test-s3-upload.*
 check-twilio-account.*
 twilio-error-lookup.*
+create-admin-user.*
 
-# Note: Keep create-admin-user.js, create-test-users.js, create-organizer-events.js as they are setup scripts
+
+# Setup and utility scripts
+create-*.js
+create-*.ts
+check-*.js
+check-*.ts
+setup-*.js
+setup-*.ts
+migrate-*.js
+migrate-*.ts
+
+# Development utility scripts
+docs-server.js
+*-server.js
