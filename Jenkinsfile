@@ -320,7 +320,7 @@ def deployBackendToServer(String server, String credentials, String env) {
                 cd ..
                 
                 # Start/restart backend
-                pm2 restart eventify-${env}-backend || pm2 start ecosystem.config.js --only eventify-${env}-backend
+                pm2 restart eventify-${env}-backend || pm2 start src/server.js --name "eventify-${env}-backend"
                 pm2 save
                 
                 echo "✅ Backend deployed successfully"
