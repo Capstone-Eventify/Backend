@@ -42,10 +42,39 @@ prisma/migrations/dev.db-journal
 
 .env.backup
 
-# Test event data files
-**/test-events*.json
-**/test-events-data*.json
-test-events/
-*.test-events.*
-test-event-data.*
-# Note: Scripts like create-organizer-events.js are tracked, only data files are ignored
+# Test files and utilities
+**/test-*.js
+**/test-*.json
+**/test-*.ts
+test-*/
+*.test.*
+*test.*
+test-data.*
+debug-*.js
+debug-*.json
+
+# Test directories
+test/
+__tests__/
+tests/
+spec/
+
+# Debug and development files
+debug/
+temp/
+tmp/
+*.debug.*
+*.dev.*
+*.local.*
+
+# Communication test files
+test-communications.*
+test-gmail-connection.*
+test-notification.*
+test-sendgrid.*
+test-sms-service.*
+test-s3-upload.*
+check-twilio-account.*
+twilio-error-lookup.*
+
+# Note: Keep create-admin-user.js, create-test-users.js, create-organizer-events.js as they are setup scripts
