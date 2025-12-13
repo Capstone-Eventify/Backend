@@ -317,10 +317,10 @@ def deployBackendToServer(String server, String credentials, String env) {
                 echo "🗄️ Running database migrations..."
                 npx prisma migrate deploy || echo "⚠️ Migration failed, continuing..."
                 
-                cd ..
-                
-                # Start/restart backend
+                # Start/restart backend (from backend directory)
                 pm2 restart eventify-${env}-backend || pm2 start src/server.js --name "eventify-${env}-backend"
+                
+                cd ..
                 pm2 save
                 
                 echo "✅ Backend deployed successfully"
