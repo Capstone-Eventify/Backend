@@ -297,7 +297,7 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
     return { tickets, payment };
   });
 
-  // Send registration notifications
+  // Send registration notifications (in-app + email)
   try {
     await notificationService.notifyEventRegistration({
       ticket: result.tickets[0],
@@ -309,17 +309,17 @@ exports.confirmPayment = asyncHandler(async (req, res) => {
     // Don't fail the payment if notifications fail
   }
 
-  // Send SMS and Email notifications
+  // Send SMS notification only (email already sent by notificationService)
   try {
-    console.log('Sending SMS and Email notifications for event registration...');
-    const notifications = await communicationService.sendEventRegistrationNotification(
-      user,
-      event,
-      result.tickets[0]
-    );
-    console.log('Notification results:', notifications);
+    if (user.phone) {
+      console.log('Sending SMS notification for event registration...');
+      const smsMessage = `🎉 Registration confirmed for "${event.title}"!\n\n📅 ${new Date(event.startDate).toLocaleDateString()} at ${event.startTime}\n📍 ${event.venueName || event.city}\n🎫 Ticket ID: ${result.tickets[0].id}\n\nSee you there! - Eventify`;
+      
+      const smsResult = await communicationService.sendSMS(user.phone, smsMessage);
+      console.log('SMS notification result:', smsResult);
+    }
   } catch (communicationError) {
-    console.error('Error sending SMS/Email notifications:', communicationError);
+    console.error('Error sending SMS notification:', communicationError);
     // Don't fail the payment if notifications fail
   }
 

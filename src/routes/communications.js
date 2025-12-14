@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const communicationService = require('../services/communicationService');
 const asyncHandler = require('../middleware/asyncHandler');
+const prisma = require('../lib/prisma');
 
 // @desc    Test SMS functionality
 // @route   POST /api/communications/test-sms
@@ -77,11 +78,17 @@ router.post('/send-reminder', protect, authorize('ORGANIZER', 'ADMIN'), asyncHan
     });
   }
 
-  const notifications = await communicationService.sendEventReminder(
-    ticket.attendee,
-    ticket.event,
-    ticket
-  );
+  // Send SMS reminder only (use notification service for email + in-app notifications)
+  const notifications = [];
+  
+  if (ticket.attendee.phone) {
+    const smsMessage = `⏰ Reminder: "${ticket.event.title}" is tomorrow!\n\n📅 ${new Date(ticket.event.startDate).toLocaleDateString()} at ${ticket.event.startTime}\n📍 ${ticket.event.venueName || ticket.event.city}\n\nDon't forget to bring your ticket! - Eventify`;
+    
+    const smsResult = await communicationService.sendSMS(ticket.attendee.phone, smsMessage);
+    notifications.push({ type: 'sms', ...smsResult });
+  } else {
+    notifications.push({ type: 'sms', success: false, error: 'No phone number available' });
+  }
   
   res.status(200).json({
     success: true,
