@@ -7,7 +7,8 @@ const {
   updateEvent,
   deleteEvent,
   getMyEvents,
-  getEventsByOrganizer
+  getEventsByOrganizer,
+  testDuplicatePrevention
 } = require('../controllers/eventController');
 const { protect, authorize, optionalAuth } = require('../middleware/auth');
 
@@ -16,6 +17,9 @@ router.get('/', optionalAuth, getEvents);
 
 // Protected routes - SPECIFIC ROUTE MUST COME BEFORE PARAMETERIZED ROUTE
 router.get('/organizer/my-events', protect, authorize('organizer', 'admin'), getMyEvents);
+
+// Test route for duplicate prevention (development only)
+router.post('/test-duplicate', testDuplicatePrevention);
 
 // Public routes (continued) - parameterized routes after specific routes
 router.get('/organizer/:organizerId', optionalAuth, getEventsByOrganizer);

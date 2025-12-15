@@ -442,6 +442,91 @@ class NotificationService {
       console.error('Error sending waitlist approval email:', error);
     }
   }
+  // Waitlist Promotion Notification (when someone is promoted due to no-show)
+  async notifyWaitlistPromotion(promotionData) {
+    try {
+      const { userId, userName, userEmail, event, ticketId, orderNumber, replacedAttendee } = promotionData;
+      
+      // Real-time notification to promoted user
+      await socketService.sendToUser(userId, {
+        type: 'waitlist_promoted',
+        title: 'You\'ve Been Promoted!',
+        message: `Great news! You've been automatically promoted from the waitlist for "${event.title}" due to a cancellation. Your ticket is confirmed!`,
+        link: `/dashboard?tab=tickets`,
+        metadata: {
+          eventId: event.id,
+          ticketId: ticketId,
+          eventTitle: event.title,
+          orderNumber: orderNumber
+        }
+      });
+
+      // Email notification to promoted user
+      try {
+        await this.sendWaitlistPromotionEmail(userName, userEmail, event, ticketId, orderNumber);
+      } catch (emailError) {
+        console.error('Error sending promotion email:', emailError);
+      }
+
+      // Notify event organizer
+      await socketService.sendToUser(event.organizerId, {
+        type: 'info',
+        title: 'Waitlist User Promoted',
+        message: `${userName} has been automatically promoted from the waitlist for "${event.title}" (replacing ${replacedAttendee})`,
+        link: `/dashboard/events/${event.id}`,
+        metadata: {
+          eventId: event.id,
+          promotedUserId: userId,
+          eventTitle: event.title
+        }
+      });
+
+      console.log(`Waitlist promotion notification sent for event: ${event.title}`);
+    } catch (error) {
+      console.error('Error sending waitlist promotion notification:', error);
+    }
+  }
+
+  async sendWaitlistPromotionEmail(userName, userEmail, event, ticketId, orderNumber) {
+    try {
+      await sendEmail({
+        email: userEmail,
+        subject: `Ticket Confirmed - ${event.title}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #059669;">🎉 You've Been Promoted!</h2>
+            <p>Hi ${userName.split(' ')[0]},</p>
+            <p>Fantastic news! A spot has opened up for <strong>${event.title}</strong> and you've been automatically promoted from the waitlist!</p>
+            
+            <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin: 0 0 10px 0; color: #374151;">Your Ticket Details:</h3>
+              <p style="margin: 5px 0;"><strong>Event:</strong> ${event.title}</p>
+              <p style="margin: 5px 0;"><strong>Date:</strong> ${new Date(event.startDate).toLocaleDateString()}</p>
+              <p style="margin: 5px 0;"><strong>Time:</strong> ${event.startTime}</p>
+              <p style="margin: 5px 0;"><strong>Location:</strong> ${event.isOnline ? 'Online Event' : (event.venueName || event.address)}</p>
+              <p style="margin: 5px 0;"><strong>Order Number:</strong> ${orderNumber}</p>
+            </div>
+            
+            <div style="background: #dcfce7; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p style="margin: 0; color: #166534;"><strong>✅ Your ticket is confirmed!</strong> No further action needed.</p>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard?tab=tickets" 
+                 style="background: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                View My Tickets
+              </a>
+            </div>
+            
+            <p>We're excited to see you at the event!</p>
+            <p>Best regards,<br>The Eventify Team</p>
+          </div>
+        `
+      });
+    } catch (error) {
+      console.error('Error sending waitlist promotion email:', error);
+    }
+  }
 }
 
 // Export singleton instance

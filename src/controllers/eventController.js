@@ -1,5 +1,6 @@
 const prisma = require('../lib/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
+const EventStatusManager = require('../utils/eventStatusManager');
 
 // @desc    Get all events
 // @route   GET /api/events
@@ -162,7 +163,8 @@ exports.getEvents = asyncHandler(async (req, res) => {
       images: formattedImages,
       price: priceString,
       attendees: event._count.tickets || event.currentBookings,
-      status: statusMap[event.status] || 'upcoming'
+      status: statusMap[event.status] || 'upcoming',
+      rawStatus: event.status // Add raw status for frontend logic
     };
   });
 
@@ -344,6 +346,7 @@ exports.getEvent = asyncHandler(async (req, res) => {
     maxAttendees: event.maxAttendees,
     attendees: event._count.tickets || event.currentBookings,
     status: statusMap[event.status] || 'upcoming',
+    rawStatus: event.status, // Add raw status for frontend logic
     tags: event.tags,
     requirements: event.requirements,
     refundPolicy: event.refundPolicy,
@@ -368,11 +371,62 @@ exports.getEvent = asyncHandler(async (req, res) => {
 // @route   POST /api/events
 // @access  Private/Organizer
 exports.createEvent = asyncHandler(async (req, res) => {
-  const { ticketTiers, date, time, endDate, endTime, ...eventFields } = req.body;
+  const { ticketTiers, date, time, endDate, endTime, submissionId, ...eventFields } = req.body;
+  
+  // Duplicate prevention: Check if we've seen this submission ID recently
+  if (submissionId) {
+    const recentSubmissions = global.recentSubmissions || new Map();
+    const now = Date.now();
+    
+    // Clean old submissions (older than 5 minutes)
+    for (const [id, timestamp] of recentSubmissions.entries()) {
+      if (now - timestamp > 300000) { // 5 minutes
+        recentSubmissions.delete(id);
+      }
+    }
+    
+    // Check if this submission ID was already processed
+    if (recentSubmissions.has(submissionId)) {
+      console.log('⚠️ Duplicate submission prevented:', submissionId);
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate submission detected. Please wait before trying again.'
+      });
+    }
+    
+    // Mark this submission as processed
+    recentSubmissions.set(submissionId, now);
+    global.recentSubmissions = recentSubmissions;
+    
+    console.log('✅ New submission accepted:', submissionId);
+  }
   
   // Convert date/time strings to DateTime objects
   const startDate = date ? new Date(date + 'T' + (time || '00:00')) : new Date(req.body.startDate);
   const endDateTime = endDate ? new Date(endDate + 'T' + (endTime || '23:59')) : new Date(req.body.endDate);
+
+  // Check for potential duplicate events (same title by same organizer within 1 minute)
+  const recentEvent = await prisma.event.findFirst({
+    where: {
+      organizerId: req.user.id,
+      title: eventFields.title,
+      createdAt: {
+        gte: new Date(Date.now() - 60000) // Within last minute
+      }
+    }
+  });
+  
+  if (recentEvent) {
+    console.log('⚠️ Potential duplicate event detected:', {
+      organizerId: req.user.id,
+      title: eventFields.title,
+      recentEventId: recentEvent.id
+    });
+    return res.status(409).json({
+      success: false,
+      message: 'An event with this title was recently created. Please wait before creating another.'
+    });
+  }
 
   // Remove fields that don't exist in the schema
   const { imageDisplayType, seatingArrangement, ...validFields } = eventFields;
@@ -454,6 +508,39 @@ exports.createEvent = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Test duplicate prevention
+// @route   POST /api/events/test-duplicate
+// @access  Public (for testing only)
+exports.testDuplicatePrevention = asyncHandler(async (req, res) => {
+  const { submissionId } = req.body;
+  
+  console.log('🧪 Testing duplicate prevention with submissionId:', submissionId);
+  
+  // Use the same duplicate prevention logic
+  if (submissionId) {
+    const recentSubmissions = global.recentSubmissions || new Map();
+    const now = Date.now();
+    
+    if (recentSubmissions.has(submissionId)) {
+      console.log('⚠️ Duplicate test submission prevented:', submissionId);
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate submission detected in test'
+      });
+    }
+    
+    recentSubmissions.set(submissionId, now);
+    global.recentSubmissions = recentSubmissions;
+  }
+  
+  res.json({
+    success: true,
+    message: 'Test submission accepted',
+    submissionId,
+    timestamp: Date.now()
+  });
+});
+
 // @desc    Update event
 // @route   PUT /api/events/:id
 // @access  Private/Organizer
@@ -479,6 +566,28 @@ exports.updateEvent = asyncHandler(async (req, res) => {
   }
 
   const { ticketTiers, date, time, endDate, endTime, ...eventFields } = req.body;
+  
+  // Validate status changes if status is being updated
+  if (eventFields.status) {
+    const newStatus = eventFields.status.toUpperCase();
+    
+    // If trying to publish (set to LIVE), validate timing
+    if (newStatus === 'LIVE' && event.status !== 'LIVE') {
+      const eventToCheck = {
+        ...event,
+        startDate: date && time ? new Date(date + 'T' + time) : event.startDate,
+        endDate: endDate && endTime ? new Date(endDate + 'T' + endTime) : event.endDate
+      };
+      
+      const publishCheck = EventStatusManager.canPublish(eventToCheck);
+      if (!publishCheck.canPublish) {
+        return res.status(400).json({
+          success: false,
+          message: publishCheck.reason
+        });
+      }
+    }
+  }
   
   // Prepare update data
   const updateData = { ...eventFields };
@@ -764,6 +873,7 @@ exports.getMyEvents = asyncHandler(async (req, res) => {
       ticketTiers: ticketTiers,
       attendees: event._count?.tickets || event.currentBookings || 0,
       status: statusMap[event.status] || 'upcoming',
+      rawStatus: event.status, // Add raw status for frontend logic
       fullDescription: event.fullDescription || event.description
     };
   });
@@ -885,8 +995,9 @@ exports.getEventsByOrganizer = asyncHandler(async (req, res) => {
       images: formattedImages,
       price: priceString,
       ticketTiers: ticketTiers,
-      attendees: event._count.tickets || event.currentBookings,
+      attendees: event._count?.tickets || event.currentBookings || 0,
       status: statusMap[event.status] || 'upcoming',
+      rawStatus: event.status, // Add raw status for frontend logic
       fullDescription: event.fullDescription || event.description
     };
   });
