@@ -146,6 +146,9 @@ app.use((err, req, res, next) => {
 
 // Prisma Client is initialized in lib/prisma.js
 
+// Start event status job
+const EventStatusJob = require('./jobs/eventStatusJob');
+
 // Start server
 const PORT = process.env.PORT || 5001; // Changed to 5001 to avoid macOS AirPlay conflict
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces to allow external connections
@@ -157,6 +160,10 @@ try {
     console.log(`💾 Database: Connected to PostgreSQL`);
     console.log(`💳 Stripe payments: Enabled`);
     console.log(`🔌 WebSocket: Real-time notifications enabled`);
+    
+    // Start event status job
+    EventStatusJob.start();
+    
     console.log(`✅ Server started successfully!`);
   });
 } catch (error) {
